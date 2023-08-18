@@ -42,6 +42,8 @@ def train(opt):
     else:
         torch.manual_seed(123)
     model = DeepQNetwork()
+
+    # Remove the existing log path and create a new one
     if os.path.isdir(opt.log_path):
         shutil.rmtree(opt.log_path)
     os.makedirs(opt.log_path)
@@ -49,29 +51,40 @@ def train(opt):
     optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr)
     criterion = nn.MSELoss()
     game_state = FlappyBird()
+
+    # Get the initial image, reward, and terminal state from the game state
     image, reward, terminal = game_state.next_frame(0)
+
+    # Pre-process the image and convert it to a PyTorch tensor
     image = pre_processing(image[:game_state.screen_width, :int(game_state.base_y)], opt.image_size, opt.image_size)
     image = torch.from_numpy(image)
+
+    # Move the image tensor to the GPU if available
     if torch.cuda.is_available():
         model.cuda()
         image = image.cuda()
+
+    # Create the initial state by repeating the image tensor 4 times
     state = torch.cat(tuple(image for _ in range(4)))[None, :, :, :]
 
+    # Initialize the replay memory and iteration counter
     replay_memory = []
     iter = 0
     while iter < opt.num_iters:
+        # Get the Q-values prediction from the model for the current state
         prediction = model(state)[0]
         # Exploration or exploitation
         epsilon = opt.final_epsilon + (
                 (opt.num_iters - iter) * (opt.initial_epsilon - opt.final_epsilon) / opt.num_iters)
+        
+        # Choose an action based on the exploration-exploitation trade-off
         u = random()
         random_action = u <= epsilon
         if random_action:
             print("Perform a random action")
             action = randint(0, 1)
         else:
-
-            action = torch.argmax(prediction)[0]
+            action = torch.argmax(prediction)
 
         next_image, reward, terminal = game_state.next_frame(action)
         next_image = pre_processing(next_image[:game_state.screen_width, :int(game_state.base_y)], opt.image_size,
@@ -79,10 +92,15 @@ def train(opt):
         next_image = torch.from_numpy(next_image)
         if torch.cuda.is_available():
             next_image = next_image.cuda()
+
+        # Create the next state by replacing the oldest image tensor with the next image tensor
+        # If the replay memory exceeds its size limit, remove the oldest transition
         next_state = torch.cat((state[0, 1:, :, :], next_image))[None, :, :, :]
         replay_memory.append([state, action, reward, next_state, terminal])
         if len(replay_memory) > opt.replay_memory_size:
             del replay_memory[0]
+
+        
         batch = sample(replay_memory, min(len(replay_memory), opt.batch_size))
         state_batch, action_batch, reward_batch, next_state_batch, terminal_batch = zip(*batch)
 
