@@ -100,11 +100,11 @@ def train(opt):
         if len(replay_memory) > opt.replay_memory_size:
             del replay_memory[0]
 
-        
+        # 均匀采样，可尝试概率优先采样
         batch = sample(replay_memory, min(len(replay_memory), opt.batch_size))
         state_batch, action_batch, reward_batch, next_state_batch, terminal_batch = zip(*batch)
 
-        state_batch = torch.cat(tuple(state for state in state_batch))
+        state_batch = torch.cat(tuple(state for state in state_batch))  # [4, 84, 84]
         action_batch = torch.from_numpy(
             np.array([[1, 0] if action == 0 else [0, 1] for action in action_batch], dtype=np.float32))
         reward_batch = torch.from_numpy(np.array(reward_batch, dtype=np.float32)[:, None])
@@ -115,12 +115,12 @@ def train(opt):
             action_batch = action_batch.cuda()
             reward_batch = reward_batch.cuda()
             next_state_batch = next_state_batch.cuda()
-        current_prediction_batch = model(state_batch)
-        next_prediction_batch = model(next_state_batch)
+        current_prediction_batch = model(state_batch)   # 对当前state的评估
+        next_prediction_batch = model(next_state_batch) # 对下个state的评估
 
         y_batch = torch.cat(
             tuple(reward if terminal else reward + opt.gamma * torch.max(prediction) for reward, terminal, prediction in
-                  zip(reward_batch, terminal_batch, next_prediction_batch)))
+                  zip(reward_batch, terminal_batch, next_prediction_batch))) # 
 
         q_value = torch.sum(current_prediction_batch * action_batch, dim=1)
         optimizer.zero_grad()
